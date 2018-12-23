@@ -1,0 +1,211 @@
+﻿
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <title>Chess Template</title>
+  <link rel="stylesheet" href="css/chessboard.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <audio>
+	<source src="sounds/move.mp3"></source>
+  </audio>
+  <audio>
+    <source src="sounds/yahoo.mp3"></source>
+  </audio>
+</head>
+<body>
+
+<script src="js/chess.js"></script>
+<a id="signOut" style="position: absolute; top: 20px; left: 20px; font-size: 20px;">sign out</a>
+<div id="board"></div>
+<div id="result"></div>
+
+<div id="player1" style="position: absolute; top: 60px; left: 20px; font-size: 20px;"></div>
+<div id="player2" style="position: absolute; top: 80px; left: 20px; font-size: 20px;"></div>
+
+<script src="js/json3.min.js"></script>
+<script src="js/jquery-1.10.1.min.js"></script>
+<script src="js/chessboard.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/5.7.0/firebase.js"></script>
+    <script>
+  // Initialize Firebase
+  var config = {
+    apiKey: "AIzaSyAkaIg-IGCdNb-hP1n7J6kzaB4__Qew1SY",
+    authDomain: "web-chess-9fd25.firebaseapp.com",
+    databaseURL: "https://web-chess-9fd25.firebaseio.com",
+    projectId: "web-chess-9fd25",
+    storageBucket: "web-chess-9fd25.appspot.com",
+    messagingSenderId: "516799168938"
+  };
+  firebase.initializeApp(config);
+
+  firebase.auth().onAuthStateChanged(function (user) {
+			if (user) {
+			    //still connected
+			} else {
+			    resetDataBase();
+			    location.href = "login.html";
+			}
+		});
+
+  console.log(firebase.auth().currentUser); //get the user info any time
+
+  $("#signOut").click(function(){
+	firebase.auth().signOut().then(function() {
+		// Sign-out successful.
+	}).catch(function(error) {
+		// An error happened.
+	});
+  });
+    </script>
+
+
+<script>
+    var turn = 0;
+    var myGameStatus = 0;
+    var player1 = "";
+    var userName1 = "";
+    var player2 = "";
+    var userName2 = "";
+    var _game = firebase.database().ref().child('game');
+    var _fen = firebase.database().ref().child('game').child('fen');
+    var position = 'start';
+    var timer;
+    _fen.on('value', function (snap) {
+        position = snap.val();
+        init();
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            $("#result").html('Game over, ' + (turn == 1 ? userName2 : userName1) + ' won.');
+            $("audio")[1].play();
+            myGameStatus = 0;
+            setTimeout(function () {
+                resetDataBase();
+                location.href = "index.html";
+            }, 6000);
+        }, 60000);
+    });
+    _game.on('value', function (snap) {
+        if (snap.val().status == 0) {
+            location.href = "index.html";
+        }
+
+        turn = snap.val().turn;
+        myGameStatus = snap.val().status;
+        player1 = snap.val().player1;
+        userName1 = snap.val().UserName1;
+        player2 = snap.val().player2;
+        userName2 = snap.val().UserName2;
+
+        $("#player1").text("player 1: " + userName1);
+        $("#player2").text("player 2: " + userName2);
+    });
+    
+var init = function() {
+var board,
+  game = new Chess(position === 'start' ? undefined : position);
+
+// do not pick up pieces if the game is over
+// only pick up pieces for the side to move
+var onDragStart = function (source, piece, position, orientation) {
+    if ((myGameStatus != 2 )
+    || (turn == 1 && localStorage['identifier'] == player2)
+    || (turn == 2 && localStorage['identifier'] == player1)
+    || (localStorage['identifier'] != player1 && localStorage['identifier'] != player2)
+    || game.game_over() === true 
+    || (game.turn() === 'w' && piece.search(/^b/) !== -1) 
+    || (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+    return false;
+    }
+};
+
+var onDrop = function(source, target) {
+  // see if the move is legal
+  var move = game.move({
+    from: source,
+    to: target,
+    promotion: 'q' // NOTE: always promote to a queen for example simplicity
+  });
+
+  // illegal move
+  if (move === null) return 'snapback';
+
+  updateStatus();
+  $("audio")[0].play();
+  _game.update({ fen: game.fen() });
+  _game.update({ turn: ((turn == 1) ? 2 : 1) });
+};
+
+// update the board position after the piece snap 
+// for castling, en passant, pawn promotion
+var onSnapEnd = function() {
+  board.position(game.fen());
+};
+
+var updateStatus = function() {
+  var status = '';
+
+  var moveColor = 'White';
+  if (game.turn() === 'b') {
+    moveColor = 'Black';
+  }
+
+  // checkmate?
+  if (game.in_checkmate() === true) {
+      status = 'Game over, ' + (turn == 1 ? userName2 : userName1) + ' won.';
+      $("audio")[1].play();
+      setTimeout(function () {
+          resetDataBase();
+          location.href = "index.html";
+      }, 6000);
+  }
+
+  // draw?
+  else if (game.in_draw() === true) {
+      status = 'Game over, drawn position';
+      setTimeout(function () {
+          resetDataBase();
+          location.href = "index.html";
+      }, 6000);
+  }
+
+  // game still on
+  else {
+    status = moveColor + ' to move';
+
+    // check?
+    if (game.in_check() === true) {
+      status += ', ' + moveColor + ' is in check';
+    }
+  }
+
+  $("#result").html(status);
+  console.log(game.fen());
+  console.log(game.pgn());
+};
+
+var cfg = {
+  draggable: true,
+  position: position,
+  onDragStart: onDragStart,
+  onDrop: onDrop,
+  onSnapEnd: onSnapEnd
+};
+board = ChessBoard('board', cfg);
+updateStatus();
+
+}; // end init()
+$(document).ready(init);
+
+function resetDataBase() {
+    _game.update({ status: 0, player1: "", UserName1: "", player2: "", UserName2: "", fen: "" });
+}
+
+//position = 'rnbqkbnr/ppp2ppp/3p4/4p3/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3';
+//init();
+//unmark to start from a different position
+</script>
+</body>
+</html>
